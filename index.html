@@ -344,6 +344,11 @@
                 padding: 20px 25px;
                 font-size: 1em;
             }
+
+            .difficulty-btn {
+                padding: 6px 12px;
+                font-size: 0.8em;
+            }
         }
     </style>
 </head>
@@ -408,8 +413,17 @@
                 this.currentDifficulty = 'easy';
                 this.isLoading = false;
 
-                // API configuration using the dosoku API
+                // API configuration using CORS-friendly endpoints
                 this.apiEndpoints = {
+                    // Using a public CORS proxy for the dosuku API
+                    easy: 'https://cors-anywhere.herokuapp.com/https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
+                    medium: 'https://cors-anywhere.herokuapp.com/https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
+                    hard: 'https://cors-anywhere.herokuapp.com/https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
+                    expert: 'https://cors-anywhere.herokuapp.com/https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}'
+                };
+
+                // Backup endpoints without CORS proxy (some may work depending on browser settings)
+                this.backupEndpoints = {
                     easy: 'https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
                     medium: 'https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
                     hard: 'https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
@@ -469,57 +483,191 @@
             }
 
             async fetchPuzzleFromAPI() {
-                const endpoint = this.apiEndpoints[this.currentDifficulty];
+                // Try multiple approaches to get a puzzle
+                const endpoints = [
+                    this.apiEndpoints[this.currentDifficulty],
+                    this.backupEndpoints[this.currentDifficulty]
+                ];
                 
-                try {
-                    // Try the primary API (dosuku)
-                    const response = await fetch(endpoint);
-                    if (!response.ok) throw new Error('API request failed');
-                    
-                    const data = await response.json();
-                    
-                    // Parse dosuku API response
-                    if (data.newboard && data.newboard.grids && data.newboard.grids.length > 0) {
-                        const grid = data.newboard.grids[0];
-                        this.processPuzzleData(grid.value, grid.solution);
-                        return;
+                for (let endpoint of endpoints) {
+                    try {
+                        const response = await fetch(endpoint, {
+                            method: 'GET',
+                            headers: {
+                                'Accept': 'application/json',
+                            }
+                        });
+                        
+                        if (!response.ok) continue;
+                        
+                        const data = await response.json();
+                        
+                        // Parse dosuku API response
+                        if (data.newboard && data.newboard.grids && data.newboard.grids.length > 0) {
+                            const grid = data.newboard.grids[0];
+                            
+                            // Validate that this puzzle has exactly one solution
+                            if (!this.validateSudokuUniqueness(grid.value)) {
+                                continue; // Try next endpoint
+                            }
+                            
+                            this.processPuzzleData(grid.value, grid.solution);
+                            return;
+                        }
+                    } catch (error) {
+                        // Continue to next endpoint
+                        continue;
                     }
-                } catch (error) {
-                    // Silently fall back to alternative API
                 }
 
-                // Fallback to another API or local puzzles
+                // If all primary endpoints fail, try alternative approaches
                 await this.tryAlternativeAPI();
             }
 
             async tryAlternativeAPI() {
-                // Try alternative API endpoints based on difficulty
-                const alternativeEndpoints = {
-                    easy: 'https://sugoku.herokuapp.com/board?difficulty=easy',
-                    medium: 'https://sugoku.herokuapp.com/board?difficulty=medium',
-                    hard: 'https://sugoku.herokuapp.com/board?difficulty=hard',
-                    expert: 'https://sugoku.herokuapp.com/board?difficulty=hard' // Use hard for expert
-                };
-
+                // Since CORS is blocking external APIs, let's use a simple local puzzle generator
+                // that creates random variations of our known good puzzles
+                
                 try {
-                    const response = await fetch(alternativeEndpoints[this.currentDifficulty]);
-                    if (!response.ok) throw new Error('Alternative API failed');
+                    // Generate a puzzle based on difficulty by modifying our fallback puzzles
+                    const basePuzzles = this.getFallbackPuzzles();
+                    const puzzleData = basePuzzles[this.currentDifficulty] || basePuzzles.easy;
                     
-                    const data = await response.json();
-                    if (data.board) {
-                        // Get the solution for this puzzle
-                        const solvedBoard = await this.solvePuzzle(data.board);
-                        this.processPuzzleData(data.board, solvedBoard);
+                    // Create a slight variation by rotating/flipping the solution
+                    const variations = this.createPuzzleVariations(puzzleData);
+                    const randomVariation = variations[Math.floor(Math.random() * variations.length)];
+                    
+                    // Validate the variation has exactly one solution
+                    if (this.validateSudokuUniqueness(randomVariation.puzzle)) {
+                        this.processPuzzleData(randomVariation.puzzle, randomVariation.solved);
                         return;
                     }
+                    
+                    // If variation fails, use original
+                    this.processPuzzleData(puzzleData.puzzle, puzzleData.solved);
+                    return;
+                    
                 } catch (error) {
-                    throw new Error('All APIs failed');
+                    // Ultimate fallback to hardcoded puzzle
+                    throw new Error('All puzzle generation methods failed');
                 }
             }
 
-            async solvePuzzle(puzzle) {
-                // Simple solver for backup API puzzles
+            createPuzzleVariations(puzzleData) {
+                // Create variations by transposing, rotating, and swapping
+                const variations = [];
+                const original = {
+                    puzzle: puzzleData.puzzle.map(row => [...row]),
+                    solved: puzzleData.solved.map(row => [...row])
+                };
+                
+                variations.push(original);
+                
+                // Transpose (swap rows and columns)
+                const transposed = this.transposePuzzle(puzzleData);
+                if (transposed) variations.push(transposed);
+                
+                // Swap rows within bands (3x3 sections)
+                const rowSwapped = this.swapRowsInBands(puzzleData);
+                if (rowSwapped) variations.push(rowSwapped);
+                
+                return variations;
+            }
+
+            transposePuzzle(puzzleData) {
+                try {
+                    const newPuzzle = Array(9).fill().map(() => Array(9).fill(0));
+                    const newSolved = Array(9).fill().map(() => Array(9).fill(0));
+                    
+                    for (let i = 0; i < 9; i++) {
+                        for (let j = 0; j < 9; j++) {
+                            newPuzzle[j][i] = puzzleData.puzzle[i][j];
+                            newSolved[j][i] = puzzleData.solved[i][j];
+                        }
+                    }
+                    
+                    return { puzzle: newPuzzle, solved: newSolved };
+                } catch (error) {
+                    return null;
+                }
+            }
+
+            swapRowsInBands(puzzleData) {
+                try {
+                    const newPuzzle = puzzleData.puzzle.map(row => [...row]);
+                    const newSolved = puzzleData.solved.map(row => [...row]);
+                    
+                    // Randomly swap two rows within the first band (rows 0-2)
+                    const row1 = Math.floor(Math.random() * 3);
+                    const row2 = Math.floor(Math.random() * 3);
+                    
+                    if (row1 !== row2) {
+                        // Swap in puzzle
+                        [newPuzzle[row1], newPuzzle[row2]] = [newPuzzle[row2], newPuzzle[row1]];
+                        // Swap in solution
+                        [newSolved[row1], newSolved[row2]] = [newSolved[row2], newSolved[row1]];
+                    }
+                    
+                    return { puzzle: newPuzzle, solved: newSolved };
+                } catch (error) {
+                    return null;
+                }
+            }
+
+            validateSudokuUniqueness(puzzle) {
+                // Quick validation method that returns true if puzzle has exactly one solution
                 const board = puzzle.map(row => [...row]);
+                let solutionCount = 0;
+                
+                const isValid = (board, row, col, num) => {
+                    for (let i = 0; i < 9; i++) {
+                        if (board[row][i] === num || board[i][col] === num) return false;
+                    }
+                    const boxRow = Math.floor(row / 3) * 3;
+                    const boxCol = Math.floor(col / 3) * 3;
+                    for (let i = boxRow; i < boxRow + 3; i++) {
+                        for (let j = boxCol; j < boxCol + 3; j++) {
+                            if (board[i][j] === num) return false;
+                        }
+                    }
+                    return true;
+                };
+
+                const solve = (board) => {
+                    if (solutionCount > 1) return false; // Early termination
+                    
+                    for (let row = 0; row < 9; row++) {
+                        for (let col = 0; col < 9; col++) {
+                            if (board[row][col] === 0) {
+                                for (let num = 1; num <= 9; num++) {
+                                    if (isValid(board, row, col, num)) {
+                                        board[row][col] = num;
+                                        if (solve(board)) {
+                                            solutionCount++;
+                                            if (solutionCount > 1) {
+                                                board[row][col] = 0;
+                                                return false;
+                                            }
+                                        }
+                                        board[row][col] = 0;
+                                    }
+                                }
+                                return false;
+                            }
+                        }
+                    }
+                    return true;
+                };
+
+                solve(board);
+                return solutionCount === 1;
+            }
+
+            async solvePuzzle(puzzle) {
+                // Enhanced solver that counts solutions to ensure uniqueness
+                const board = puzzle.map(row => [...row]);
+                let solutionCount = 0;
+                let uniqueSolution = null;
                 
                 const isValid = (board, row, col, num) => {
                     // Check row
@@ -545,13 +693,29 @@
                 };
 
                 const solve = (board) => {
+                    // If we already found 2+ solutions, stop searching
+                    if (solutionCount > 1) return false;
+                    
                     for (let row = 0; row < 9; row++) {
                         for (let col = 0; col < 9; col++) {
                             if (board[row][col] === 0) {
                                 for (let num = 1; num <= 9; num++) {
                                     if (isValid(board, row, col, num)) {
                                         board[row][col] = num;
-                                        if (solve(board)) return true;
+                                        if (solve(board)) {
+                                            // Found a complete solution
+                                            if (solutionCount === 0) {
+                                                // Store the first solution
+                                                uniqueSolution = board.map(row => [...row]);
+                                            }
+                                            solutionCount++;
+                                            
+                                            // If we found more than one solution, this puzzle is invalid
+                                            if (solutionCount > 1) {
+                                                board[row][col] = 0;
+                                                return false;
+                                            }
+                                        }
                                         board[row][col] = 0;
                                     }
                                 }
@@ -559,11 +723,113 @@
                             }
                         }
                     }
-                    return true;
+                    return true; // Complete board found
                 };
 
                 solve(board);
-                return board;
+                
+                // Return the unique solution if exactly one exists, otherwise null
+                return solutionCount === 1 ? uniqueSolution : null;
+            }
+
+            getFallbackPuzzles() {
+                return {
+                    easy: {
+                        solved: [
+                            [5, 3, 4, 6, 7, 8, 9, 1, 2],
+                            [6, 7, 2, 1, 9, 5, 3, 4, 8],
+                            [1, 9, 8, 3, 4, 2, 5, 6, 7],
+                            [8, 5, 9, 7, 6, 1, 4, 2, 3],
+                            [4, 2, 6, 8, 5, 3, 7, 9, 1],
+                            [7, 1, 3, 9, 2, 4, 8, 5, 6],
+                            [9, 6, 1, 5, 3, 7, 2, 8, 4],
+                            [2, 8, 7, 4, 1, 9, 6, 3, 5],
+                            [3, 4, 5, 2, 8, 6, 1, 7, 9]
+                        ],
+                        puzzle: [
+                            [5, 3, 0, 0, 7, 0, 0, 0, 0],
+                            [6, 0, 0, 1, 9, 5, 0, 0, 0],
+                            [0, 9, 8, 0, 0, 0, 0, 6, 0],
+                            [8, 0, 0, 0, 6, 0, 0, 0, 3],
+                            [4, 0, 0, 8, 0, 3, 0, 0, 1],
+                            [7, 0, 0, 0, 2, 0, 0, 0, 6],
+                            [0, 6, 0, 0, 0, 0, 2, 8, 0],
+                            [0, 0, 0, 4, 1, 9, 0, 0, 5],
+                            [0, 0, 0, 0, 8, 0, 0, 7, 9]
+                        ]
+                    },
+                    medium: {
+                        solved: [
+                            [8, 2, 7, 1, 5, 4, 3, 9, 6],
+                            [9, 6, 5, 3, 2, 7, 1, 4, 8],
+                            [3, 4, 1, 6, 8, 9, 7, 5, 2],
+                            [5, 9, 3, 4, 6, 8, 2, 7, 1],
+                            [4, 7, 2, 5, 1, 3, 6, 8, 9],
+                            [6, 1, 8, 9, 7, 2, 4, 3, 5],
+                            [7, 8, 6, 2, 3, 5, 9, 1, 4],
+                            [1, 5, 4, 7, 9, 6, 8, 2, 3],
+                            [2, 3, 9, 8, 4, 1, 5, 6, 7]
+                        ],
+                        puzzle: [
+                            [8, 0, 0, 1, 0, 0, 0, 0, 6],
+                            [0, 0, 5, 0, 0, 7, 0, 0, 0],
+                            [0, 4, 0, 0, 0, 0, 0, 5, 0],
+                            [0, 0, 3, 0, 6, 0, 2, 0, 0],
+                            [0, 0, 8, 0, 7, 0, 4, 0, 0],
+                            [0, 8, 0, 0, 0, 0, 0, 1, 0],
+                            [0, 0, 0, 7, 0, 0, 8, 0, 0],
+                            [2, 0, 0, 0, 0, 1, 0, 0, 7]
+                        ]
+                    },
+                    hard: {
+                        solved: [
+                            [1, 2, 3, 4, 5, 6, 7, 8, 9],
+                            [4, 5, 6, 7, 8, 9, 1, 2, 3],
+                            [7, 8, 9, 1, 2, 3, 4, 5, 6],
+                            [2, 1, 4, 3, 6, 5, 8, 9, 7],
+                            [3, 6, 5, 8, 9, 7, 2, 1, 4],
+                            [8, 9, 7, 2, 1, 4, 3, 6, 5],
+                            [5, 3, 1, 6, 4, 2, 9, 7, 8],
+                            [6, 4, 2, 9, 7, 8, 5, 3, 1],
+                            [9, 7, 8, 5, 3, 1, 6, 4, 2]
+                        ],
+                        puzzle: [
+                            [1, 0, 0, 0, 0, 0, 0, 0, 9],
+                            [0, 0, 6, 0, 0, 0, 1, 0, 0],
+                            [0, 8, 0, 0, 2, 0, 0, 5, 0],
+                            [0, 0, 0, 3, 0, 5, 0, 0, 0],
+                            [0, 0, 0, 0, 9, 0, 0, 0, 0],
+                            [0, 0, 0, 2, 0, 4, 0, 0, 0],
+                            [0, 3, 0, 0, 4, 0, 0, 7, 0],
+                            [0, 0, 2, 0, 0, 0, 5, 0, 0],
+                            [9, 0, 0, 0, 0, 0, 0, 0, 2]
+                        ]
+                    },
+                    expert: {
+                        solved: [
+                            [6, 2, 8, 4, 3, 1, 5, 9, 7],
+                            [9, 4, 3, 2, 5, 7, 1, 8, 6],
+                            [1, 5, 7, 6, 8, 9, 4, 2, 3],
+                            [2, 7, 4, 3, 1, 8, 9, 6, 5],
+                            [8, 3, 6, 5, 9, 2, 7, 1, 4],
+                            [5, 1, 9, 7, 6, 4, 8, 3, 2],
+                            [4, 9, 1, 8, 2, 6, 3, 5, 7],
+                            [3, 6, 2, 9, 7, 5, 6, 4, 8],
+                            [7, 8, 5, 1, 4, 3, 2, 7, 9]
+                        ],
+                        puzzle: [
+                            [0, 0, 0, 0, 0, 1, 0, 0, 0],
+                            [0, 0, 0, 2, 0, 0, 0, 0, 6],
+                            [0, 5, 0, 0, 0, 0, 0, 2, 0],
+                            [0, 0, 4, 0, 0, 0, 9, 0, 0],
+                            [0, 0, 0, 0, 9, 0, 0, 0, 0],
+                            [0, 0, 9, 0, 0, 0, 8, 0, 0],
+                            [0, 9, 0, 0, 0, 0, 0, 5, 0],
+                            [3, 0, 0, 0, 0, 5, 0, 0, 0],
+                            [0, 0, 0, 1, 0, 0, 0, 0, 0]
+                        ]
+                    }
+                };
             }
 
             processPuzzleData(puzzleGrid, solutionGrid) {
@@ -612,106 +878,9 @@
 
             buildFallbackPuzzle() {
                 // Fallback puzzle based on difficulty - these are actual Sudoku puzzles with some numbers missing
-                const puzzles = {
-                    easy: {
-                        solved: [
-                            [5, 3, 4, 6, 7, 8, 9, 1, 2],
-                            [6, 7, 2, 1, 9, 5, 3, 4, 8],
-                            [1, 9, 8, 3, 4, 2, 5, 6, 7],
-                            [8, 5, 9, 7, 6, 1, 4, 2, 3],
-                            [4, 2, 6, 8, 5, 3, 7, 9, 1],
-                            [7, 1, 3, 9, 2, 4, 8, 5, 6],
-                            [9, 6, 1, 5, 3, 7, 2, 8, 4],
-                            [2, 8, 7, 4, 1, 9, 6, 3, 5],
-                            [3, 4, 5, 2, 8, 6, 1, 7, 9]
-                        ],
-                        puzzle: [
-                            [5, 3, 0, 0, 7, 0, 0, 0, 0],
-                            [6, 0, 0, 1, 9, 5, 0, 0, 0],
-                            [0, 9, 8, 0, 0, 0, 0, 6, 0],
-                            [8, 0, 0, 0, 6, 0, 0, 0, 3],
-                            [4, 0, 0, 8, 0, 3, 0, 0, 1],
-                            [7, 0, 0, 0, 2, 0, 0, 0, 6],
-                            [0, 6, 0, 0, 0, 0, 2, 8, 0],
-                            [0, 0, 0, 4, 1, 9, 0, 0, 5],
-                            [0, 0, 0, 0, 8, 0, 0, 7, 9]
-                        ]
-                    },
-                    medium: {
-                        solved: [
-                            [5, 3, 4, 6, 7, 8, 9, 1, 2],
-                            [6, 7, 2, 1, 9, 5, 3, 4, 8],
-                            [1, 9, 8, 3, 4, 2, 5, 6, 7],
-                            [8, 5, 9, 7, 6, 1, 4, 2, 3],
-                            [4, 2, 6, 8, 5, 3, 7, 9, 1],
-                            [7, 1, 3, 9, 2, 4, 8, 5, 6],
-                            [9, 6, 1, 5, 3, 7, 2, 8, 4],
-                            [2, 8, 7, 4, 1, 9, 6, 3, 5],
-                            [3, 4, 5, 2, 8, 6, 1, 7, 9]
-                        ],
-                        puzzle: [
-                            [5, 0, 0, 0, 7, 0, 0, 0, 0],
-                            [0, 0, 0, 1, 0, 5, 0, 0, 0],
-                            [0, 9, 0, 0, 0, 0, 0, 6, 0],
-                            [8, 0, 0, 0, 6, 0, 0, 0, 3],
-                            [0, 0, 0, 8, 0, 3, 0, 0, 0],
-                            [7, 0, 0, 0, 2, 0, 0, 0, 6],
-                            [0, 6, 0, 0, 0, 0, 2, 0, 0],
-                            [0, 0, 0, 4, 0, 9, 0, 0, 5],
-                            [0, 0, 0, 0, 8, 0, 0, 7, 0]
-                        ]
-                    },
-                    hard: {
-                        solved: [
-                            [5, 3, 4, 6, 7, 8, 9, 1, 2],
-                            [6, 7, 2, 1, 9, 5, 3, 4, 8],
-                            [1, 9, 8, 3, 4, 2, 5, 6, 7],
-                            [8, 5, 9, 7, 6, 1, 4, 2, 3],
-                            [4, 2, 6, 8, 5, 3, 7, 9, 1],
-                            [7, 1, 3, 9, 2, 4, 8, 5, 6],
-                            [9, 6, 1, 5, 3, 7, 2, 8, 4],
-                            [2, 8, 7, 4, 1, 9, 6, 3, 5],
-                            [3, 4, 5, 2, 8, 6, 1, 7, 9]
-                        ],
-                        puzzle: [
-                            [5, 0, 0, 0, 0, 0, 0, 0, 0],
-                            [0, 0, 0, 1, 0, 0, 0, 0, 0],
-                            [0, 0, 0, 0, 0, 0, 0, 6, 0],
-                            [8, 0, 0, 0, 0, 0, 0, 0, 3],
-                            [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                            [7, 0, 0, 0, 0, 0, 0, 0, 6],
-                            [0, 6, 0, 0, 0, 0, 0, 0, 0],
-                            [0, 0, 0, 0, 0, 9, 0, 0, 5],
-                            [0, 0, 0, 0, 8, 0, 0, 0, 0]
-                        ]
-                    },
-                    expert: {
-                        solved: [
-                            [5, 3, 4, 6, 7, 8, 9, 1, 2],
-                            [6, 7, 2, 1, 9, 5, 3, 4, 8],
-                            [1, 9, 8, 3, 4, 2, 5, 6, 7],
-                            [8, 5, 9, 7, 6, 1, 4, 2, 3],
-                            [4, 2, 6, 8, 5, 3, 7, 9, 1],
-                            [7, 1, 3, 9, 2, 4, 8, 5, 6],
-                            [9, 6, 1, 5, 3, 7, 2, 8, 4],
-                            [2, 8, 7, 4, 1, 9, 6, 3, 5],
-                            [3, 4, 5, 2, 8, 6, 1, 7, 9]
-                        ],
-                        puzzle: [
-                            [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                            [0, 0, 0, 1, 0, 0, 0, 0, 0],
-                            [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                            [0, 0, 0, 0, 0, 0, 0, 0, 3],
-                            [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                            [7, 0, 0, 0, 0, 0, 0, 0, 0],
-                            [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                            [0, 0, 0, 0, 0, 9, 0, 0, 0],
-                            [0, 0, 0, 0, 0, 0, 0, 0, 0]
-                        ]
-                    }
-                };
-
+                const puzzles = this.getFallbackPuzzles();
                 const difficultyData = puzzles[this.currentDifficulty] || puzzles.easy;
+                
                 this.solvedBoard = difficultyData.solved.map(row => [...row]);
                 this.currentBoard = difficultyData.puzzle.map(row => [...row]);
                 this.fixedPositions.clear();
@@ -775,11 +944,6 @@
                 document.getElementById('errorMessage').style.display = 'none';
             }
 
-            buildHardcodedPuzzle() {
-                // This method is now replaced by buildFallbackPuzzle() but kept for compatibility
-                this.buildFallbackPuzzle();
-            }
-
             performColumnSlide(col, countMove = true) {
                 const movableValues = [];
                 const movablePositions = [];
@@ -822,7 +986,7 @@
             }
 
             slideColumn(col) {
-                if (this.gameWon) return;
+                if (this.gameWon || this.isLoading) return;
                 this.performColumnSlide(col, true);
             }
 
@@ -873,6 +1037,7 @@
                 }
 
                 document.getElementById('moveCount').textContent = this.moveCount;
+                this.updateDifficultyDisplay();
             }
 
             checkVictory() {
@@ -883,6 +1048,7 @@
             }
 
             isValidSudokuSolution() {
+                // Check rows
                 for (let row = 0; row < 9; row++) {
                     const rowSet = new Set();
                     for (let col = 0; col < 9; col++) {
@@ -894,6 +1060,7 @@
                     }
                 }
 
+                // Check columns
                 for (let col = 0; col < 9; col++) {
                     const colSet = new Set();
                     for (let row = 0; row < 9; row++) {
@@ -905,6 +1072,7 @@
                     }
                 }
 
+                // Check 3x3 boxes
                 for (let boxRow = 0; boxRow < 3; boxRow++) {
                     for (let boxCol = 0; boxCol < 3; boxCol++) {
                         const boxSet = new Set();
@@ -926,7 +1094,12 @@
             showVictoryMessage() {
                 const victoryDiv = document.getElementById('victoryMessage');
                 victoryDiv.innerHTML = `
-                    Congratulations! You solved it in ${this.moveCount} moves and ${this.getTimeString()}!
+                    <div>🎉 Congratulations! 🎉</div>
+                    <div style="margin-top: 10px; font-size: 0.9em;">
+                        Difficulty: ${this.currentDifficulty.charAt(0).toUpperCase() + this.currentDifficulty.slice(1)}<br>
+                        Moves: ${this.moveCount}<br>
+                        Time: ${this.getTimeString()}
+                    </div>
                 `;
                 victoryDiv.style.display = 'block';
             }
@@ -958,8 +1131,10 @@
             }
         }
 
-        // Initialize the hardcoded puzzle on page load
-        let game = new SlidingSudokuGame();
+        // Initialize the game when the page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            let game = new SlidingSudokuGame();
+        });
     </script>
 </body>
 </html>
