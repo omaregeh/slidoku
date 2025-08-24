@@ -359,7 +359,8 @@
             <p class="game-subtitle">Slide columns to solve the puzzle</p>
             
             <div class="difficulty-selector">
-                <button class="difficulty-btn active" data-difficulty="easy">Easy</button>
+                <button class="difficulty-btn active" data-difficulty="beginner">Beginner</button>
+                <button class="difficulty-btn" data-difficulty="easy">Easy</button>
                 <button class="difficulty-btn" data-difficulty="medium">Medium</button>
                 <button class="difficulty-btn" data-difficulty="hard">Hard</button>
                 <button class="difficulty-btn" data-difficulty="expert">Expert</button>
@@ -368,7 +369,7 @@
             <button class="new-game-btn" id="newGameBtn">New Game</button>
             
             <div class="loading" id="loadingMessage" style="display: none;">
-                Loading new puzzle...
+                Generating new puzzle...
             </div>
             
             <div class="error-message" id="errorMessage" style="display: none;"></div>
@@ -381,7 +382,7 @@
         </div>
 
         <div class="info-panel">
-            <div class="difficulty-display" id="difficultyDisplay">Difficulty: Easy</div>
+            <div class="difficulty-display" id="difficultyDisplay">Difficulty: Beginner</div>
             <div class="legend">
                 <div class="legend-item">
                     <div class="legend-color legend-fixed"></div>
@@ -401,6 +402,147 @@
     </div>
 
     <script>
+        class SudokuGenerator {
+            constructor() {
+                this.baseGrid = [
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9],
+                    [4, 5, 6, 7, 8, 9, 1, 2, 3],
+                    [7, 8, 9, 1, 2, 3, 4, 5, 6],
+                    [2, 3, 1, 5, 6, 4, 8, 9, 7],
+                    [5, 6, 4, 8, 9, 7, 2, 3, 1],
+                    [8, 9, 7, 2, 3, 1, 5, 6, 4],
+                    [3, 1, 2, 6, 4, 5, 9, 7, 8],
+                    [6, 4, 5, 9, 7, 8, 3, 1, 2],
+                    [9, 7, 8, 3, 1, 2, 6, 4, 5]
+                ];
+            }
+
+            generate() {
+                // Create a new valid complete grid through transformations
+                let grid = this.baseGrid.map(row => [...row]);
+                
+                // Apply random transformations
+                grid = this.shuffleNumbers(grid);
+                grid = this.shuffleRows(grid);
+                grid = this.shuffleColumns(grid);
+                grid = this.shuffleBands(grid);
+                grid = this.shuffleStacks(grid);
+                
+                // Randomly transpose (50% chance)
+                if (Math.random() < 0.5) {
+                    grid = this.transpose(grid);
+                }
+                
+                return grid;
+            }
+
+            shuffleNumbers(grid) {
+                // Create a random mapping of numbers 1-9
+                const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+                const mapping = {};
+                const shuffled = [...numbers].sort(() => Math.random() - 0.5);
+                
+                for (let i = 0; i < 9; i++) {
+                    mapping[numbers[i]] = shuffled[i];
+                }
+                
+                // Apply the mapping to the grid
+                return grid.map(row => row.map(cell => mapping[cell]));
+            }
+
+            shuffleRows(grid) {
+                const newGrid = [...grid];
+                
+                // Shuffle rows within each band (groups of 3 rows)
+                for (let band = 0; band < 3; band++) {
+                    const start = band * 3;
+                    const rows = [newGrid[start], newGrid[start + 1], newGrid[start + 2]];
+                    rows.sort(() => Math.random() - 0.5);
+                    newGrid[start] = rows[0];
+                    newGrid[start + 1] = rows[1];
+                    newGrid[start + 2] = rows[2];
+                }
+                
+                return newGrid;
+            }
+
+            shuffleColumns(grid) {
+                // Transpose, shuffle rows, transpose back
+                let transposed = this.transpose(grid);
+                transposed = this.shuffleRows(transposed);
+                return this.transpose(transposed);
+            }
+
+            shuffleBands(grid) {
+                const newGrid = [];
+                const bands = [
+                    [grid[0], grid[1], grid[2]],
+                    [grid[3], grid[4], grid[5]],
+                    [grid[6], grid[7], grid[8]]
+                ];
+                
+                bands.sort(() => Math.random() - 0.5);
+                
+                for (let band of bands) {
+                    newGrid.push(...band);
+                }
+                
+                return newGrid;
+            }
+
+            shuffleStacks(grid) {
+                // Transpose, shuffle bands, transpose back
+                let transposed = this.transpose(grid);
+                transposed = this.shuffleBands(transposed);
+                return this.transpose(transposed);
+            }
+
+            transpose(grid) {
+                const newGrid = Array(9).fill().map(() => Array(9).fill(0));
+                for (let i = 0; i < 9; i++) {
+                    for (let j = 0; j < 9; j++) {
+                        newGrid[j][i] = grid[i][j];
+                    }
+                }
+                return newGrid;
+            }
+
+            createPuzzle(solution, difficulty) {
+                const puzzle = solution.map(row => [...row]);
+                const cellsToRemove = this.getCellsToRemove(difficulty);
+                
+                // Get all positions
+                const positions = [];
+                for (let r = 0; r < 9; r++) {
+                    for (let c = 0; c < 9; c++) {
+                        positions.push([r, c]);
+                    }
+                }
+                
+                // Shuffle positions
+                positions.sort(() => Math.random() - 0.5);
+                
+                // Remove cells
+                for (let i = 0; i < cellsToRemove; i++) {
+                    const [r, c] = positions[i];
+                    puzzle[r][c] = 0;
+                }
+                
+                return puzzle;
+            }
+
+            getCellsToRemove(difficulty) {
+                const removeCounts = {
+                    beginner: 20,  // 61 clues remaining
+                    easy: 35,      // 46 clues remaining
+                    medium: 45,    // 36 clues remaining
+                    hard: 52,      // 29 clues remaining
+                    expert: 58     // 23 clues remaining
+                };
+                return removeCounts[difficulty] || removeCounts.beginner;
+            }
+        }
+
         class SlidingSudokuGame {
             constructor() {
                 this.currentBoard = [];
@@ -410,25 +552,9 @@
                 this.startTime = Date.now();
                 this.gameWon = false;
                 this.timerInterval = null;
-                this.currentDifficulty = 'easy';
+                this.currentDifficulty = 'beginner';
                 this.isLoading = false;
-
-                // API configuration using CORS-friendly endpoints
-                this.apiEndpoints = {
-                    // Using a public CORS proxy for the dosuku API
-                    easy: 'https://cors-anywhere.herokuapp.com/https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
-                    medium: 'https://cors-anywhere.herokuapp.com/https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
-                    hard: 'https://cors-anywhere.herokuapp.com/https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
-                    expert: 'https://cors-anywhere.herokuapp.com/https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}'
-                };
-
-                // Backup endpoints without CORS proxy (some may work depending on browser settings)
-                this.backupEndpoints = {
-                    easy: 'https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
-                    medium: 'https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
-                    hard: 'https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}',
-                    expert: 'https://sudoku-api.vercel.app/api/dosuku?query={newboard(limit:1){grids{value,solution,difficulty},results,message}}'
-                };
+                this.generator = new SudokuGenerator();
 
                 this.initializeEventListeners();
                 this.startNewGame();
@@ -469,608 +595,91 @@
                 
                 document.getElementById('victoryMessage').style.display = 'none';
 
-                // Immediate synchronous puzzle generation
-                try {
-                    this.buildFallbackPuzzle();
-                } catch (error) {
-                    console.error('Error in buildFallbackPuzzle:', error);
-                    this.createEmergencyPuzzle();
-                }
-
-                try {
-                    this.createControls();
-                } catch (error) {
-                    console.error('Error in createControls:', error);
-                }
-
-                try {
-                    this.updateDisplay();
-                } catch (error) {
-                    console.error('Error in updateDisplay:', error);
-                }
-
-                try {
-                    this.startTimer();
-                } catch (error) {
-                    console.error('Error in startTimer:', error);
-                }
-
+                // Generate a new puzzle
+                this.generateNewPuzzle();
+                
+                this.createControls();
+                this.updateDisplay();
+                this.startTimer();
                 this.setLoading(false);
             }
 
-            async fetchPuzzleFromAPI() {
-                // Try multiple approaches to get a puzzle with timeout protection
-                const endpoints = [
-                    this.apiEndpoints[this.currentDifficulty],
-                    this.backupEndpoints[this.currentDifficulty]
-                ];
+            generateNewPuzzle() {
+                // Generate a complete valid sudoku solution
+                this.solvedBoard = this.generator.generate();
                 
-                for (let endpoint of endpoints) {
-                    try {
-                        // Add timeout to fetch requests
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-                        
-                        const response = await fetch(endpoint, {
-                            method: 'GET',
-                            headers: {
-                                'Accept': 'application/json',
-                            },
-                            signal: controller.signal
-                        });
-                        
-                        clearTimeout(timeoutId);
-                        
-                        if (!response.ok) continue;
-                        
-                        const data = await response.json();
-                        
-                        // Parse dosuku API response
-                        if (data.newboard && data.newboard.grids && data.newboard.grids.length > 0) {
-                            const grid = data.newboard.grids[0];
-                            
-                            // Skip validation for API puzzles to prevent hanging - trust the API
-                            this.processPuzzleData(grid.value, grid.solution);
-                            return;
-                        }
-                    } catch (error) {
-                        // Continue to next endpoint or fallback
-                        continue;
-                    }
-                }
-
-                // If all primary endpoints fail, try alternative approaches
-                await this.tryAlternativeAPI();
-            }
-
-            async tryAlternativeAPI() {
-                // Since CORS is blocking external APIs, let's use a simple local puzzle generator
-                // that creates random variations of our known good puzzles
+                // Create puzzle by removing cells based on difficulty
+                const puzzle = this.generator.createPuzzle(this.solvedBoard, this.currentDifficulty);
                 
-                try {
-                    // Add timeout protection here too
-                    const startTime = Date.now();
-                    const maxTime = 5000; // 5 seconds max
-                    
-                    // Generate a puzzle based on difficulty by modifying our fallback puzzles
-                    const basePuzzles = this.getFallbackPuzzles();
-                    const puzzleData = basePuzzles[this.currentDifficulty] || basePuzzles.easy;
-                    
-                    // Create a slight variation by rotating/flipping the solution
-                    const variations = this.createPuzzleVariations(puzzleData);
-                    const randomVariation = variations[Math.floor(Math.random() * variations.length)];
-                    
-                    // Skip validation for fallback puzzles to prevent hanging
-                    // Our fallback puzzles are already verified to be valid
-                    this.processPuzzleData(randomVariation.puzzle, randomVariation.solved);
-                    return;
-                    
-                } catch (error) {
-                    // Ultimate fallback to hardcoded puzzle
-                    throw new Error('All puzzle generation methods failed');
-                }
-            }
-
-            createPuzzleVariations(puzzleData) {
-                // Create variations by transposing, rotating, and swapping
-                const variations = [];
-                const original = {
-                    puzzle: puzzleData.puzzle.map(row => [...row]),
-                    solved: puzzleData.solved.map(row => [...row])
-                };
+                // Set up the current board with the solution
+                this.currentBoard = this.solvedBoard.map(row => [...row]);
                 
-                variations.push(original);
-                
-                // Transpose (swap rows and columns)
-                const transposed = this.transposePuzzle(puzzleData);
-                if (transposed) variations.push(transposed);
-                
-                // Swap rows within bands (3x3 sections)
-                const rowSwapped = this.swapRowsInBands(puzzleData);
-                if (rowSwapped) variations.push(rowSwapped);
-                
-                return variations;
-            }
-
-            transposePuzzle(puzzleData) {
-                try {
-                    const newPuzzle = Array(9).fill().map(() => Array(9).fill(0));
-                    const newSolved = Array(9).fill().map(() => Array(9).fill(0));
-                    
-                    for (let i = 0; i < 9; i++) {
-                        for (let j = 0; j < 9; j++) {
-                            newPuzzle[j][i] = puzzleData.puzzle[i][j];
-                            newSolved[j][i] = puzzleData.solved[i][j];
-                        }
-                    }
-                    
-                    return { puzzle: newPuzzle, solved: newSolved };
-                } catch (error) {
-                    return null;
-                }
-            }
-
-            swapRowsInBands(puzzleData) {
-                try {
-                    const newPuzzle = puzzleData.puzzle.map(row => [...row]);
-                    const newSolved = puzzleData.solved.map(row => [...row]);
-                    
-                    // Randomly swap two rows within the first band (rows 0-2)
-                    const row1 = Math.floor(Math.random() * 3);
-                    const row2 = Math.floor(Math.random() * 3);
-                    
-                    if (row1 !== row2) {
-                        // Swap in puzzle
-                        [newPuzzle[row1], newPuzzle[row2]] = [newPuzzle[row2], newPuzzle[row1]];
-                        // Swap in solution
-                        [newSolved[row1], newSolved[row2]] = [newSolved[row2], newSolved[row1]];
-                    }
-                    
-                    return { puzzle: newPuzzle, solved: newSolved };
-                } catch (error) {
-                    return null;
-                }
-            }
-
-            validateSudokuUniqueness(puzzle) {
-                // Quick validation method with timeout to prevent freezing
-                const board = puzzle.map(row => [...row]);
-                let solutionCount = 0;
-                let iterations = 0;
-                const maxIterations = 100000; // Prevent infinite loops
-                
-                const isValid = (board, row, col, num) => {
-                    for (let i = 0; i < 9; i++) {
-                        if (board[row][i] === num || board[i][col] === num) return false;
-                    }
-                    const boxRow = Math.floor(row / 3) * 3;
-                    const boxCol = Math.floor(col / 3) * 3;
-                    for (let i = boxRow; i < boxRow + 3; i++) {
-                        for (let j = boxCol; j < boxCol + 3; j++) {
-                            if (board[i][j] === num) return false;
-                        }
-                    }
-                    return true;
-                };
-
-                const solve = (board) => {
-                    iterations++;
-                    if (iterations > maxIterations) return false; // Timeout protection
-                    if (solutionCount > 1) return false; // Early termination
-                    
-                    for (let row = 0; row < 9; row++) {
-                        for (let col = 0; col < 9; col++) {
-                            if (board[row][col] === 0) {
-                                for (let num = 1; num <= 9; num++) {
-                                    if (isValid(board, row, col, num)) {
-                                        board[row][col] = num;
-                                        if (solve(board)) {
-                                            solutionCount++;
-                                            if (solutionCount > 1) {
-                                                board[row][col] = 0;
-                                                return false;
-                                            }
-                                        }
-                                        board[row][col] = 0;
-                                    }
-                                }
-                                return false;
-                            }
-                        }
-                    }
-                    return true;
-                };
-
-                try {
-                    solve(board);
-                    return solutionCount === 1;
-                } catch (error) {
-                    // If validation fails, assume it's valid to prevent freezing
-                    return true;
-                }
-            }
-
-            async solvePuzzle(puzzle) {
-                // Enhanced solver that counts solutions to ensure uniqueness
-                const board = puzzle.map(row => [...row]);
-                let solutionCount = 0;
-                let uniqueSolution = null;
-                
-                const isValid = (board, row, col, num) => {
-                    // Check row
-                    for (let i = 0; i < 9; i++) {
-                        if (board[row][i] === num) return false;
-                    }
-                    
-                    // Check column
-                    for (let i = 0; i < 9; i++) {
-                        if (board[i][col] === num) return false;
-                    }
-                    
-                    // Check 3x3 box
-                    const boxRow = Math.floor(row / 3) * 3;
-                    const boxCol = Math.floor(col / 3) * 3;
-                    for (let i = boxRow; i < boxRow + 3; i++) {
-                        for (let j = boxCol; j < boxCol + 3; j++) {
-                            if (board[i][j] === num) return false;
-                        }
-                    }
-                    
-                    return true;
-                };
-
-                const solve = (board) => {
-                    // If we already found 2+ solutions, stop searching
-                    if (solutionCount > 1) return false;
-                    
-                    for (let row = 0; row < 9; row++) {
-                        for (let col = 0; col < 9; col++) {
-                            if (board[row][col] === 0) {
-                                for (let num = 1; num <= 9; num++) {
-                                    if (isValid(board, row, col, num)) {
-                                        board[row][col] = num;
-                                        if (solve(board)) {
-                                            // Found a complete solution
-                                            if (solutionCount === 0) {
-                                                // Store the first solution
-                                                uniqueSolution = board.map(row => [...row]);
-                                            }
-                                            solutionCount++;
-                                            
-                                            // If we found more than one solution, this puzzle is invalid
-                                            if (solutionCount > 1) {
-                                                board[row][col] = 0;
-                                                return false;
-                                            }
-                                        }
-                                        board[row][col] = 0;
-                                    }
-                                }
-                                return false;
-                            }
-                        }
-                    }
-                    return true; // Complete board found
-                };
-
-                solve(board);
-                
-                // Return the unique solution if exactly one exists, otherwise null
-                return solutionCount === 1 ? uniqueSolution : null;
-            }
-
-            getFallbackPuzzles() {
-                return {
-                    easy: {
-                        solved: [
-                            [5, 3, 4, 6, 7, 8, 9, 1, 2],
-                            [6, 7, 2, 1, 9, 5, 3, 4, 8],
-                            [1, 9, 8, 3, 4, 2, 5, 6, 7],
-                            [8, 5, 9, 7, 6, 1, 4, 2, 3],
-                            [4, 2, 6, 8, 5, 3, 7, 9, 1],
-                            [7, 1, 3, 9, 2, 4, 8, 5, 6],
-                            [9, 6, 1, 5, 3, 7, 2, 8, 4],
-                            [2, 8, 7, 4, 1, 9, 6, 3, 5],
-                            [3, 4, 5, 2, 8, 6, 1, 7, 9]
-                        ],
-                        puzzle: [
-                            [5, 3, 0, 0, 7, 0, 0, 0, 0],
-                            [6, 0, 0, 1, 9, 5, 0, 0, 0],
-                            [0, 9, 8, 0, 0, 0, 0, 6, 0],
-                            [8, 0, 0, 0, 6, 0, 0, 0, 3],
-                            [4, 0, 0, 8, 0, 3, 0, 0, 1],
-                            [7, 0, 0, 0, 2, 0, 0, 0, 6],
-                            [0, 6, 0, 0, 0, 0, 2, 8, 0],
-                            [0, 0, 0, 4, 1, 9, 0, 0, 5],
-                            [0, 0, 0, 0, 8, 0, 0, 7, 9]
-                        ]
-                    },
-                    medium: {
-                        solved: [
-                            [8, 2, 7, 1, 5, 4, 3, 9, 6],
-                            [9, 6, 5, 3, 2, 7, 1, 4, 8],
-                            [3, 4, 1, 6, 8, 9, 7, 5, 2],
-                            [5, 9, 3, 4, 6, 8, 2, 7, 1],
-                            [4, 7, 2, 5, 1, 3, 6, 8, 9],
-                            [6, 1, 8, 9, 7, 2, 4, 3, 5],
-                            [7, 8, 6, 2, 3, 5, 9, 1, 4],
-                            [1, 5, 4, 7, 9, 6, 8, 2, 3],
-                            [2, 3, 9, 8, 4, 1, 5, 6, 7]
-                        ],
-                        puzzle: [
-                            [8, 0, 0, 1, 0, 0, 0, 0, 6],
-                            [0, 0, 5, 0, 0, 7, 0, 0, 0],
-                            [0, 4, 0, 0, 0, 0, 0, 5, 0],
-                            [0, 0, 3, 0, 6, 0, 2, 0, 0],
-                            [0, 0, 8, 0, 7, 0, 4, 0, 0],
-                            [0, 8, 0, 0, 0, 0, 0, 1, 0],
-                            [0, 0, 0, 7, 0, 0, 8, 0, 0],
-                            [2, 0, 0, 0, 0, 1, 0, 0, 7]
-                        ]
-                    },
-                    hard: {
-                        solved: [
-                            [1, 2, 3, 4, 5, 6, 7, 8, 9],
-                            [4, 5, 6, 7, 8, 9, 1, 2, 3],
-                            [7, 8, 9, 1, 2, 3, 4, 5, 6],
-                            [2, 1, 4, 3, 6, 5, 8, 9, 7],
-                            [3, 6, 5, 8, 9, 7, 2, 1, 4],
-                            [8, 9, 7, 2, 1, 4, 3, 6, 5],
-                            [5, 3, 1, 6, 4, 2, 9, 7, 8],
-                            [6, 4, 2, 9, 7, 8, 5, 3, 1],
-                            [9, 7, 8, 5, 3, 1, 6, 4, 2]
-                        ],
-                        puzzle: [
-                            [1, 0, 0, 0, 0, 0, 0, 0, 9],
-                            [0, 0, 6, 0, 0, 0, 1, 0, 0],
-                            [0, 8, 0, 0, 2, 0, 0, 5, 0],
-                            [0, 0, 0, 3, 0, 5, 0, 0, 0],
-                            [0, 0, 0, 0, 9, 0, 0, 0, 0],
-                            [0, 0, 0, 2, 0, 4, 0, 0, 0],
-                            [0, 3, 0, 0, 4, 0, 0, 7, 0],
-                            [0, 0, 2, 0, 0, 0, 5, 0, 0],
-                            [9, 0, 0, 0, 0, 0, 0, 0, 2]
-                        ]
-                    },
-                    expert: {
-                        solved: [
-                            [6, 2, 8, 4, 3, 1, 5, 9, 7],
-                            [9, 4, 3, 2, 5, 7, 1, 8, 6],
-                            [1, 5, 7, 6, 8, 9, 4, 2, 3],
-                            [2, 7, 4, 3, 1, 8, 9, 6, 5],
-                            [8, 3, 6, 5, 9, 2, 7, 1, 4],
-                            [5, 1, 9, 7, 6, 4, 8, 3, 2],
-                            [4, 9, 1, 8, 2, 6, 3, 5, 7],
-                            [3, 6, 2, 9, 7, 5, 6, 4, 8],
-                            [7, 8, 5, 1, 4, 3, 2, 7, 9]
-                        ],
-                        puzzle: [
-                            [0, 0, 0, 0, 0, 1, 0, 0, 0],
-                            [0, 0, 0, 2, 0, 0, 0, 0, 6],
-                            [0, 5, 0, 0, 0, 0, 0, 2, 0],
-                            [0, 0, 4, 0, 0, 0, 9, 0, 0],
-                            [0, 0, 0, 0, 9, 0, 0, 0, 0],
-                            [0, 0, 9, 0, 0, 0, 8, 0, 0],
-                            [0, 9, 0, 0, 0, 0, 0, 5, 0],
-                            [3, 0, 0, 0, 0, 5, 0, 0, 0],
-                            [0, 0, 0, 1, 0, 0, 0, 0, 0]
-                        ]
-                    }
-                };
-            }
-
-            processPuzzleData(puzzleGrid, solutionGrid) {
-                // Convert the API data to our internal format
-                this.solvedBoard = solutionGrid.map(row => [...row]);
-                this.currentBoard = puzzleGrid.map(row => [...row]); // Start with the puzzle, not the solution!
+                // Clear and set fixed positions
                 this.fixedPositions.clear();
-
-                // Identify fixed positions based on the puzzle (non-zero cells)
                 for (let r = 0; r < 9; r++) {
                     for (let c = 0; c < 9; c++) {
-                        if (puzzleGrid[r][c] !== 0) {
+                        if (puzzle[r][c] !== 0) {
                             this.fixedPositions.add(`${r},${c}`);
                         }
                     }
                 }
-
-                // Fill empty cells with the correct numbers from solution
-                for (let r = 0; r < 9; r++) {
-                    for (let c = 0; c < 9; c++) {
-                        if (puzzleGrid[r][c] === 0) {
-                            this.currentBoard[r][c] = solutionGrid[r][c];
-                        }
-                    }
-                }
-
-                // Now scramble only the movable cells based on difficulty
-                this.scrambleByDifficulty();
-            }
-
-            scrambleByDifficulty() {
-                // Simplified scrambling to prevent any hanging
-                try {
-                    // Ensure we have a valid board before scrambling
-                    if (!this.currentBoard || !Array.isArray(this.currentBoard) || this.currentBoard.length !== 9) {
-                        console.error('Invalid board for scrambling:', this.currentBoard);
-                        return;
-                    }
-
-                    const scramblePatterns = {
-                        easy: [2, 4],
-                        medium: [1, 3, 5],
-                        hard: [0, 2, 4, 6],
-                        expert: [1, 3, 5, 7]
-                    };
-
-                    const pattern = scramblePatterns[this.currentDifficulty] || scramblePatterns.easy;
-                    
-                    // Simple scrambling with safety checks
-                    for (let i = 0; i < pattern.length; i++) {
-                        const col = pattern[i];
-                        if (col >= 0 && col < 9) {
-                            this.performColumnSlide(col, false);
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error in scrambleByDifficulty:', error);
-                    // If scrambling fails, just continue without scrambling
-                }
-            }
-
-            buildFallbackPuzzle() {
-                try {
-                    console.log('Building fallback puzzle for difficulty:', this.currentDifficulty);
-                    
-                    // Use the emergency puzzle system which is more reliable
-                    this.createEmergencyPuzzle();
-                    
-                    // Verify board structure
-                    if (!this.currentBoard || this.currentBoard.length !== 9) {
-                        console.error('Board structure invalid after creation');
-                        return;
-                    }
-                    
-                    // Verify each row has 9 elements
-                    for (let i = 0; i < 9; i++) {
-                        if (!this.currentBoard[i] || this.currentBoard[i].length !== 9) {
-                            console.error(`Row ${i} is invalid:`, this.currentBoard[i]);
-                            return;
-                        }
-                    }
-
-                    console.log('Board structure verified: 9x9');
-                    console.log('Fixed positions:', this.fixedPositions.size);
-                    
-                    // Simple scrambling
-                    this.scrambleByDifficulty();
-                    
-                } catch (error) {
-                    console.error('Error in buildFallbackPuzzle:', error);
-                }
-            }
-
-            createEmergencyPuzzle() {
-                // Create a simple, guaranteed valid puzzle
-                this.solvedBoard = [
-                    [5, 3, 4, 6, 7, 8, 9, 1, 2],
-                    [6, 7, 2, 1, 9, 5, 3, 4, 8],
-                    [1, 9, 8, 3, 4, 2, 5, 6, 7],
-                    [8, 5, 9, 7, 6, 1, 4, 2, 3],
-                    [4, 2, 6, 8, 5, 3, 7, 9, 1],
-                    [7, 1, 3, 9, 2, 4, 8, 5, 6],
-                    [9, 6, 1, 5, 3, 7, 2, 8, 4],
-                    [2, 8, 7, 4, 1, 9, 6, 3, 5],
-                    [3, 4, 5, 2, 8, 6, 1, 7, 9]
-                ];
                 
-                this.currentBoard = this.solvedBoard.map(row => [...row]);
-                this.fixedPositions.clear();
-                
-                // Add fixed positions based on difficulty
-                const fixedPatterns = {
-                    easy: ['0,0', '0,1', '1,3', '1,4', '1,5', '2,1', '2,2', '3,0', '4,0', '4,3', '4,5', '4,8', '5,0', '5,8', '6,6', '6,7', '7,4', '7,5', '8,7', '8,8'],
-                    medium: ['0,0', '1,3', '2,1', '3,0', '4,4', '5,8', '6,6', '7,5', '8,8'],
-                    hard: ['0,0', '1,3', '3,8', '5,0', '6,1', '7,5', '8,8'],
-                    expert: ['1,3', '3,8', '5,0', '7,5']
+                // Scramble the movable cells
+                this.scrambleMovableCells();
+            }
+
+            scrambleMovableCells() {
+                // Scramble columns based on difficulty
+                const scrambleIntensity = {
+                    beginner: 3,
+                    easy: 5,
+                    medium: 8,
+                    hard: 12,
+                    expert: 20
                 };
                 
-                const pattern = fixedPatterns[this.currentDifficulty] || fixedPatterns.easy;
-                pattern.forEach(pos => this.fixedPositions.add(pos));
+                const intensity = scrambleIntensity[this.currentDifficulty] || 5;
                 
-                console.log('Emergency puzzle created with', pattern.length, 'fixed positions');
-            }
-
-            setLoading(loading) {
-                try {
-                    this.isLoading = loading;
-                    const loadingMsg = document.getElementById('loadingMessage');
-                    const newGameBtn = document.getElementById('newGameBtn');
-                    const controls = document.getElementById('controls');
-
-                    if (loading) {
-                        if (loadingMsg) loadingMsg.style.display = 'block';
-                        if (newGameBtn) {
-                            newGameBtn.disabled = true;
-                            newGameBtn.style.opacity = '0.5';
-                        }
-                        if (controls) {
-                            controls.style.opacity = '0.5';
-                            controls.style.pointerEvents = 'none';
-                        }
-                    } else {
-                        if (loadingMsg) loadingMsg.style.display = 'none';
-                        if (newGameBtn) {
-                            newGameBtn.disabled = false;
-                            newGameBtn.style.opacity = '1';
-                        }
-                        if (controls) {
-                            controls.style.opacity = '1';
-                            controls.style.pointerEvents = 'auto';
-                        }
+                // Perform random column slides
+                for (let i = 0; i < intensity; i++) {
+                    const randomCol = Math.floor(Math.random() * 9);
+                    const slideCount = Math.floor(Math.random() * 8) + 1;
+                    
+                    for (let j = 0; j < slideCount; j++) {
+                        this.performColumnSlide(randomCol, false);
                     }
-                } catch (error) {
-                    console.error('Error in setLoading:', error);
-                    this.isLoading = false; // Ensure we don't get stuck
                 }
-            }
-
-            showError(message) {
-                const errorMsg = document.getElementById('errorMessage');
-                errorMsg.textContent = message;
-                errorMsg.style.display = 'block';
-                setTimeout(() => {
-                    errorMsg.style.display = 'none';
-                }, 5000);
-            }
-
-            hideError() {
-                document.getElementById('errorMessage').style.display = 'none';
             }
 
             performColumnSlide(col, countMove = true) {
-                try {
-                    // Safety check for valid column
-                    if (col < 0 || col >= 9) {
-                        console.error('Invalid column:', col);
-                        return;
+                const movableValues = [];
+                const movablePositions = [];
+
+                // Collect movable values in the column
+                for (let row = 0; row < 9; row++) {
+                    if (!this.fixedPositions.has(`${row},${col}`)) {
+                        movableValues.push(this.currentBoard[row][col]);
+                        movablePositions.push(row);
                     }
+                }
 
-                    const movableValues = [];
-                    const movablePositions = [];
+                // Only slide if there are at least 2 movable values
+                if (movableValues.length > 1) {
+                    // Slide down: last element moves to first position
+                    const lastValue = movableValues.pop();
+                    movableValues.unshift(lastValue);
 
-                    // Safely collect movable values
-                    for (let row = 0; row < 9; row++) {
-                        if (this.currentBoard[row] && this.currentBoard[row][col] !== undefined) {
-                            if (!this.fixedPositions.has(`${row},${col}`)) {
-                                movableValues.push(this.currentBoard[row][col]);
-                                movablePositions.push(row);
-                            }
-                        }
+                    // Apply the slid values back to the board
+                    for (let i = 0; i < movablePositions.length; i++) {
+                        this.currentBoard[movablePositions[i]][col] = movableValues[i];
                     }
+                }
 
-                    // Only perform slide if we have movable values
-                    if (movableValues.length > 1) {
-                        const lastValue = movableValues.pop();
-                        movableValues.unshift(lastValue);
-
-                        // Safely assign new values
-                        for (let i = 0; i < movablePositions.length; i++) {
-                            const row = movablePositions[i];
-                            if (this.currentBoard[row] && movableValues[i] !== undefined) {
-                                this.currentBoard[row][col] = movableValues[i];
-                            }
-                        }
-                    }
-
-                    if (countMove) {
-                        this.moveCount++;
-                        this.updateDisplay();
-                        this.checkVictory();
-                        this.animateColumn(col);
-                    }
-                } catch (error) {
-                    console.error('Error in performColumnSlide:', error);
+                if (countMove) {
+                    this.moveCount++;
+                    this.updateDisplay();
+                    this.checkVictory();
+                    this.animateColumn(col);
                 }
             }
 
@@ -1105,119 +714,62 @@
             }
 
             updateDisplay() {
-                try {
-                    const grid = document.getElementById('sudokuGrid');
-                    if (!grid) {
-                        console.error('Could not find sudoku grid element');
-                        return;
-                    }
-                    
-                    grid.innerHTML = '';
+                const grid = document.getElementById('sudokuGrid');
+                grid.innerHTML = '';
 
-                    // Ensure we have a valid board
-                    if (!this.currentBoard || !Array.isArray(this.currentBoard) || this.currentBoard.length !== 9) {
-                        console.error('Invalid current board for display:', this.currentBoard);
-                        return;
-                    }
+                for (let sectionRow = 0; sectionRow < 3; sectionRow++) {
+                    for (let sectionCol = 0; sectionCol < 3; sectionCol++) {
+                        const section = document.createElement('div');
+                        section.className = 'sudoku-section';
 
-                    for (let sectionRow = 0; sectionRow < 3; sectionRow++) {
-                        for (let sectionCol = 0; sectionCol < 3; sectionCol++) {
-                            const section = document.createElement('div');
-                            section.className = 'sudoku-section';
+                        for (let i = 0; i < 3; i++) {
+                            for (let j = 0; j < 3; j++) {
+                                const row = sectionRow * 3 + i;
+                                const col = sectionCol * 3 + j;
 
-                            for (let i = 0; i < 3; i++) {
-                                for (let j = 0; j < 3; j++) {
-                                    const row = sectionRow * 3 + i;
-                                    const col = sectionCol * 3 + j;
+                                const cell = document.createElement('div');
+                                cell.className = 'sudoku-cell';
+                                cell.textContent = this.currentBoard[row][col];
+                                cell.dataset.row = row;
+                                cell.dataset.col = col;
 
-                                    const cell = document.createElement('div');
-                                    cell.className = 'sudoku-cell';
-                                    
-                                    // Safe access to board data
-                                    if (this.currentBoard[row] && this.currentBoard[row][col] !== undefined) {
-                                        cell.textContent = this.currentBoard[row][col];
-                                    } else {
-                                        cell.textContent = '?';
-                                        console.warn(`Missing data at position [${row}][${col}]`);
-                                    }
-                                    
-                                    cell.dataset.row = row;
-                                    cell.dataset.col = col;
-
-                                    if (this.fixedPositions.has(`${row},${col}`)) {
-                                        cell.classList.add('fixed');
-                                    } else {
-                                        cell.classList.add('movable');
-                                    }
-
-                                    section.appendChild(cell);
+                                if (this.fixedPositions.has(`${row},${col}`)) {
+                                    cell.classList.add('fixed');
+                                } else {
+                                    cell.classList.add('movable');
                                 }
+
+                                section.appendChild(cell);
                             }
-
-                            grid.appendChild(section);
                         }
-                    }
 
-                    // Safe update of move count
-                    const moveCountElement = document.getElementById('moveCount');
-                    if (moveCountElement) {
-                        moveCountElement.textContent = this.moveCount;
+                        grid.appendChild(section);
                     }
-                    
-                    this.updateDifficultyDisplay();
-                } catch (error) {
-                    console.error('Error in updateDisplay:', error);
                 }
+
+                document.getElementById('moveCount').textContent = this.moveCount;
+                this.updateDifficultyDisplay();
             }
 
             checkVictory() {
                 if (this.isValidSudokuSolution()) {
                     this.gameWon = true;
                     this.showVictoryMessage();
+                    if (this.timerInterval) {
+                        clearInterval(this.timerInterval);
+                    }
                 }
             }
 
             isValidSudokuSolution() {
-                // Check rows
-                for (let row = 0; row < 9; row++) {
-                    const rowSet = new Set();
-                    for (let col = 0; col < 9; col++) {
-                        const val = this.currentBoard[row][col];
-                        if (val < 1 || val > 9 || rowSet.has(val)) {
+                // Compare current board with solved board
+                for (let r = 0; r < 9; r++) {
+                    for (let c = 0; c < 9; c++) {
+                        if (this.currentBoard[r][c] !== this.solvedBoard[r][c]) {
                             return false;
                         }
-                        rowSet.add(val);
                     }
                 }
-
-                // Check columns
-                for (let col = 0; col < 9; col++) {
-                    const colSet = new Set();
-                    for (let row = 0; row < 9; row++) {
-                        const val = this.currentBoard[row][col];
-                        if (val < 1 || val > 9 || colSet.has(val)) {
-                            return false;
-                        }
-                        colSet.add(val);
-                    }
-                }
-
-                // Check 3x3 boxes
-                for (let boxRow = 0; boxRow < 3; boxRow++) {
-                    for (let boxCol = 0; boxCol < 3; boxCol++) {
-                        const boxSet = new Set();
-                        for (let i = 0; i < 3; i++) {
-                            for (let j = 0; j < 3; j++) {
-                                const val = this.currentBoard[boxRow * 3 + i][boxCol * 3 + j];
-                                if (val < 1 || val > 9 || boxSet.has(val)) {
-                                    return false;
-                                }
-                                boxSet.add(val);
-                            }
-                        }
-                    }
-                }
-
                 return true;
             }
 
@@ -1259,11 +811,36 @@
                 const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
                 return this.formatTime(elapsed);
             }
+
+            setLoading(loading) {
+                this.isLoading = loading;
+                const loadingMsg = document.getElementById('loadingMessage');
+                const newGameBtn = document.getElementById('newGameBtn');
+                const controls = document.getElementById('controls');
+
+                if (loading) {
+                    loadingMsg.style.display = 'block';
+                    newGameBtn.disabled = true;
+                    newGameBtn.style.opacity = '0.5';
+                    controls.style.opacity = '0.5';
+                    controls.style.pointerEvents = 'none';
+                } else {
+                    loadingMsg.style.display = 'none';
+                    newGameBtn.disabled = false;
+                    newGameBtn.style.opacity = '1';
+                    controls.style.opacity = '1';
+                    controls.style.pointerEvents = 'auto';
+                }
+            }
+
+            hideError() {
+                document.getElementById('errorMessage').style.display = 'none';
+            }
         }
 
         // Initialize the game when the page loads
         document.addEventListener('DOMContentLoaded', function() {
-            let game = new SlidingSudokuGame();
+            const game = new SlidingSudokuGame();
         });
     </script>
 </body>
