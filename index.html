@@ -167,6 +167,12 @@
             transition: all 0.3s ease;
             position: relative;
             overflow: hidden;
+            cursor: pointer;
+        }
+
+        .sudoku-cell:hover {
+            transform: scale(1.03);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
         }
 
         .sudoku-cell.fixed {
@@ -176,10 +182,18 @@
             box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
         }
 
+        .sudoku-cell.fixed:hover {
+            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.5);
+        }
+
         .sudoku-cell.movable {
             background: linear-gradient(135deg, #74b9ff, #0984e3);
             color: white;
-            cursor: pointer;
+        }
+
+        .sudoku-cell.movable:hover {
+            background: linear-gradient(135deg, #5daaff, #006ec3);
+            box-shadow: 0 4px 12px rgba(116, 185, 255, 0.5);
         }
 
         .sudoku-cell.highlight {
@@ -715,6 +729,13 @@
                                 cell.textContent = this.currentBoard[row][col];
                                 cell.dataset.row = row;
                                 cell.dataset.col = col;
+
+                                // Add click handler to slide the column when any cell is clicked
+                                cell.addEventListener('click', () => {
+                                    if (!this.gameWon && !this.isLoading) {
+                                        this.slideColumn(col);
+                                    }
+                                });
 
                                 if (this.fixedPositions.has(`${row},${col}`)) {
                                     cell.classList.add('fixed');
