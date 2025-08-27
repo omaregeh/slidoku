@@ -687,8 +687,109 @@
                     }
                 }
                 
-                // Calculate actual minimum moves needed
-                this.minMoves = this.calculateTrueMinimumMoves(columnSlides);
+                // Calculate actual minimum moves needed using BFS
+                this.minMoves = this.calculateMinimumMovesWithBFS();
+            }
+
+            calculateMinimumMovesWithBFS() {
+                // Use breadth-first search to find the actual minimum moves to reach the solution
+                const startState = this.boardToString(this.currentBoard);
+                const targetState = this.boardToString(this.solvedBoard);
+                
+                // If already solved
+                if (startState === targetState) return 0;
+                
+                const queue = [{state: startState, moves: 0}];
+                const visited = new Set([startState]);
+                const maxDepth = 50; // Prevent infinite searching
+                
+                while (queue.length > 0) {
+                    const {state, moves} = queue.shift();
+                    
+                    // Prevent searching too deep
+                    if (moves >= maxDepth) {
+                        break;
+                    }
+                    
+                    // Try sliding each column
+                    for (let col = 0; col < 9; col++) {
+                        const newBoard = this.stringToBoard(state);
+                        this.performColumnSlideOnBoard(newBoard, col);
+                        const newState = this.boardToString(newBoard);
+                        
+                        // Found solution!
+                        if (newState === targetState) {
+                            return moves + 1;
+                        }
+                        
+                        // Add to queue if not visited
+                        if (!visited.has(newState)) {
+                            visited.add(newState);
+                            queue.push({state: newState, moves: moves + 1});
+                        }
+                    }
+                }
+                
+                // If BFS doesn't find solution within depth limit, estimate based on differences
+                return this.estimateMinimumMoves();
+            }
+
+            boardToString(board) {
+                return board.map(row => row.join('')).join('');
+            }
+
+            stringToBoard(str) {
+                const board = [];
+                for (let i = 0; i < 9; i++) {
+                    board.push(str.substr(i * 9, 9).split('').map(Number));
+                }
+                return board;
+            }
+
+            performColumnSlideOnBoard(board, col) {
+                const movableValues = [];
+                const movablePositions = [];
+
+                // Collect movable values in the column
+                for (let row = 0; row < 9; row++) {
+                    if (!this.fixedPositions.has(`${row},${col}`)) {
+                        movableValues.push(board[row][col]);
+                        movablePositions.push(row);
+                    }
+                }
+
+                // Only slide if there are at least 2 movable values
+                if (movableValues.length > 1) {
+                    // Slide down: last element moves to first position
+                    const lastValue = movableValues.pop();
+                    movableValues.unshift(lastValue);
+
+                    // Apply the slid values back to the board
+                    for (let i = 0; i < movablePositions.length; i++) {
+                        board[movablePositions[i]][col] = movableValues[i];
+                    }
+                }
+            }
+
+            estimateMinimumMoves() {
+                // Fallback estimation when BFS takes too long
+                // Count how many columns have misplaced movable numbers
+                let estimate = 0;
+                
+                for (let col = 0; col < 9; col++) {
+                    let hasMismatch = false;
+                    for (let row = 0; row < 9; row++) {
+                        if (!this.fixedPositions.has(`${row},${col}`)) {
+                            if (this.currentBoard[row][col] !== this.solvedBoard[row][col]) {
+                                hasMismatch = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hasMismatch) estimate++;
+                }
+                
+                return Math.max(1, estimate);
             }
 
             calculateTrueMinimumMoves(columnSlides) {
@@ -844,17 +945,35 @@
 
             showVictoryMessage() {
                 const victoryDiv = document.getElementById('victoryMessage');
-                const efficiency = this.minMoves > 0 ? Math.round((this.minMoves / this.moveCount) * 100) : 100;
-                const rating = efficiency >= 100 ? '⭐ Perfect!' : 
-                              efficiency >= 80 ? '🌟 Excellent!' :
-                              efficiency >= 60 ? '✨ Good!' : '💪 Keep practicing!';
+                
+                // Calculate efficiency correctly (can't exceed 100%)
+                let efficiency;
+                let rating;
+                
+                if (this.minMoves === 0) {
+                    // Already solved puzzle
+                    efficiency = 100;
+                    rating = '⭐ Already solved!';
+                } else if (this.moveCount <= this.minMoves) {
+                    // Perfect or better (shouldn't happen with correct BFS, but just in case)
+                    efficiency = 100;
+                    rating = '⭐ Perfect!';
+                } else {
+                    // Normal case: more moves than minimum
+                    efficiency = Math.round((this.minMoves / this.moveCount) * 100);
+                    rating = efficiency >= 80 ? '🌟 Excellent!' :
+                            efficiency >= 60 ? '✨ Good!' : 
+                            efficiency >= 40 ? '💪 Keep practicing!' :
+                            '🎯 Try for fewer moves!';
+                }
                 
                 victoryDiv.innerHTML = `
                     <div>🎉 Congratulations! 🎉</div>
                     <div style="margin-top: 10px; font-size: 0.9em;">
                         Difficulty: ${this.currentDifficulty.charAt(0).toUpperCase() + this.currentDifficulty.slice(1)}<br>
                         Moves: ${this.moveCount} / Min: ${this.minMoves}<br>
-                        Efficiency: ${efficiency}% ${rating}<br>
+                        Efficiency: ${efficiency}%<br>
+                        ${rating}<br>
                         Time: ${this.getTimeString()}
                     </div>
                 `;
