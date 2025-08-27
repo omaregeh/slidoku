@@ -394,6 +394,7 @@
             </div>
             <div class="stats">
                 <span>Moves: <span id="moveCount">0</span></span>
+                <span>Min Possible: <span id="minMoves">-</span></span>
                 <span>Time: <span id="timeCount">00:00</span></span>
             </div>
             <p>Click column buttons to slide numbers down. Fixed numbers stay in place!</p>
@@ -549,6 +550,8 @@
                 this.solvedBoard = [];
                 this.fixedPositions = new Set();
                 this.moveCount = 0;
+                this.minMoves = 0;
+                this.scrambleSequence = [];
                 this.startTime = Date.now();
                 this.gameWon = false;
                 this.timerInterval = null;
@@ -621,12 +624,15 @@
                     }
                 }
                 
-                // Scramble the movable cells
-                this.scrambleMovableCells();
+                // Perform controlled scrambling with tracking
+                this.performControlledScramble();
             }
 
-            scrambleMovableCells() {
-                // Scramble columns based on difficulty
+            performControlledScramble() {
+                // Reset scramble tracking
+                this.scrambleSequence = [];
+                
+                // Define scramble intensity by difficulty (how many scramble actions to perform)
                 const scrambleIntensity = {
                     beginner: 3,
                     easy: 5,
@@ -635,17 +641,75 @@
                     expert: 20
                 };
                 
-                const intensity = scrambleIntensity[this.currentDifficulty] || 5;
+                const intensity = scrambleIntensity[this.currentDifficulty];
                 
-                // Perform random column slides
-                for (let i = 0; i < intensity; i++) {
-                    const randomCol = Math.floor(Math.random() * 9);
-                    const slideCount = Math.floor(Math.random() * 8) + 1;
-                    
-                    for (let j = 0; j < slideCount; j++) {
-                        this.performColumnSlide(randomCol, false);
+                // Create a set to track which columns have movable pieces
+                const columnsWithMovables = [];
+                for (let col = 0; col < 9; col++) {
+                    let movableCount = 0;
+                    for (let row = 0; row < 9; row++) {
+                        if (!this.fixedPositions.has(`${row},${col}`)) {
+                            movableCount++;
+                        }
+                    }
+                    if (movableCount > 1) { // Only columns with 2+ movables can actually slide
+                        columnsWithMovables.push(col);
                     }
                 }
+                
+                // If no columns have movables (shouldn't happen), return
+                if (columnsWithMovables.length === 0) {
+                    this.minMoves = 0;
+                    return;
+                }
+                
+                // Track how many times each column is slid (net slides)
+                const columnSlides = new Map();
+                
+                // Perform random scrambling
+                for (let i = 0; i < intensity; i++) {
+                    // Select a random column with movables
+                    const col = columnsWithMovables[Math.floor(Math.random() * columnsWithMovables.length)];
+                    
+                    // Perform 1-8 slides on this column
+                    const slides = Math.floor(Math.random() * 8) + 1;
+                    
+                    // Track this move
+                    this.scrambleSequence.push({ col, slides });
+                    
+                    // Update net slides for this column (modulo 9 since 9 slides = back to start)
+                    const currentSlides = columnSlides.get(col) || 0;
+                    columnSlides.set(col, (currentSlides + slides) % 9);
+                    
+                    // Actually perform the slides
+                    for (let j = 0; j < slides; j++) {
+                        this.performColumnSlide(col, false);
+                    }
+                }
+                
+                // Calculate actual minimum moves needed
+                this.minMoves = this.calculateTrueMinimumMoves(columnSlides);
+            }
+
+            calculateTrueMinimumMoves(columnSlides) {
+                let totalMinMoves = 0;
+                
+                // For each column that was scrambled
+                for (const [col, netSlides] of columnSlides) {
+                    if (netSlides === 0) continue; // Column is already in correct position
+                    
+                    // To reverse N slides down, we need (9 - N) slides down
+                    // (since 9 slides returns to original position)
+                    const movesNeeded = 9 - netSlides;
+                    totalMinMoves += movesNeeded;
+                }
+                
+                return totalMinMoves;
+            }
+
+            scrambleMovableCells() {
+                // This method is now replaced by performControlledScramble
+                // Keeping empty for compatibility
             }
 
             performColumnSlide(col, countMove = true) {
@@ -752,6 +816,7 @@
                 }
 
                 document.getElementById('moveCount').textContent = this.moveCount;
+                document.getElementById('minMoves').textContent = this.minMoves || '-';
                 this.updateDifficultyDisplay();
             }
 
@@ -779,11 +844,17 @@
 
             showVictoryMessage() {
                 const victoryDiv = document.getElementById('victoryMessage');
+                const efficiency = this.minMoves > 0 ? Math.round((this.minMoves / this.moveCount) * 100) : 100;
+                const rating = efficiency >= 100 ? '⭐ Perfect!' : 
+                              efficiency >= 80 ? '🌟 Excellent!' :
+                              efficiency >= 60 ? '✨ Good!' : '💪 Keep practicing!';
+                
                 victoryDiv.innerHTML = `
                     <div>🎉 Congratulations! 🎉</div>
                     <div style="margin-top: 10px; font-size: 0.9em;">
                         Difficulty: ${this.currentDifficulty.charAt(0).toUpperCase() + this.currentDifficulty.slice(1)}<br>
-                        Moves: ${this.moveCount}<br>
+                        Moves: ${this.moveCount} / Min: ${this.minMoves}<br>
+                        Efficiency: ${efficiency}% ${rating}<br>
                         Time: ${this.getTimeString()}
                     </div>
                 `;
